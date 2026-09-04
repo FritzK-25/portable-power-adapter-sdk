@@ -19,7 +19,7 @@
     "model": "Example power station"
   },
   "origin": {
-    "name": "Portable Power Home Assistant Bridge Kit",
+    "name": "Portable Power Adapter SDK",
     "sw_version": "0.1.0"
   }
 }

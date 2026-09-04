@@ -1,19 +1,19 @@
-# Portable Power Home Assistant Bridge Kit
+# Portable Power Adapter SDK
 
-A local-first, vendor-neutral kit for presenting portable power telemetry in
+A local-first, vendor-neutral SDK for presenting portable power telemetry in
 Home Assistant through MQTT Discovery.
 
-This repository contains a documented MQTT contract, safe example payloads, a
+This repository contains typed adapter interfaces, a generic Home Assistant MQTT
+Discovery publisher, a runnable fake adapter, safe example payloads, a
 low-state-of-charge automation blueprint, and checks that keep credentials,
 recordings, serial numbers, and machine-specific paths out of public commits.
-It does **not** contain Bluetooth protocol code, cloud credentials, or a device
-controller.
+It does **not** contain Bluetooth protocol code, cloud credentials, or a device controller.
 
 ## What this solves
 
 Portable power stations expose data through different mechanisms: Bluetooth,
-vendor cloud APIs, or vendor MQTT brokers. An adapter reads one of those sources
-and publishes a consistent, local MQTT device:
+vendor cloud APIs, or vendor MQTT brokers. A vendor adapter implements the SDK's
+read-only interface; the generic publisher then creates a consistent, local MQTT device:
 
 ```text
 device or cloud adapter -> MQTT Discovery -> Home Assistant device/entities
@@ -32,11 +32,47 @@ and supplies Home Assistant-ready examples.
   MQTT topics and Home Assistant entity IDs.
 - **Useful precision:** charge level is published to one decimal place by default.
 
-## Quick start
+## Build an adapter
+
+Implement `PowerAdapter` with a `DeviceDescriptor`, `Metric` list, and a
+current `TelemetrySnapshot`. The SDK publisher supplies Discovery, retained
+availability, value rounding, and a cross-launcher lock.
+
+```python
+from datetime import datetime, timezone
+from portable_power_sdk import DeviceDescriptor, Metric, TelemetryHealth, TelemetrySnapshot
+
+class MyAdapter:
+    device = DeviceDescriptor("opaque_device_id", "My power station", "Vendor", "Model")
+    metrics = (Metric("main_soc", "Main battery SOC", "%", "battery", "measurement", precision=1),)
+
+    def snapshot(self):
+        return TelemetrySnapshot(datetime.now(timezone.utc), TelemetryHealth.LIVE, {"main_soc": 78.9})
+
+    def close(self):
+        pass
+```
+
+Use `HomeAssistantMQTTPublisher(adapter, mqtt_client)` in the adapter's launcher.
+Wrap that launcher in `publisher_lock(data_dir)` to reject a duplicate publisher.
+
+## Try the fake adapter
+
+```powershell
+python -m pip install -e ".[test]"
+portable-power describe
+portable-power demo
+pytest
+```
+
+`demo` emits a sanitized state payload where the fake raw SoC value
+`78.89179992675781` becomes `78.9` before publication.
+
+## Home Assistant quick start
 
 1. Configure Home Assistant's MQTT integration and a broker user dedicated to
    the adapter.
-2. Have an adapter publish the retained discovery configuration in
+2. Have an SDK-based adapter publish the retained discovery configuration in
    [`examples/discovery-main-soc.json`](examples/discovery-main-soc.json).
 3. Publish the state JSON in [`examples/state.json`](examples/state.json) to
    `portable_power/<device_id>/state`.
@@ -55,7 +91,7 @@ licenses, and credentials differ. This kit is designed to work with adapters
 that publish Home Assistant MQTT Discovery payloads, including local Bluetooth
 recorders and vendor-supported MQTT sources.
 
-If you build an adapter, use this contract and open an issue with a sanitized
+If you build an adapter, use this SDK contract and open an issue with a sanitized
 discovery payload and entity list. Never attach a raw database, MQTT password,
 serial number, cloud token, or Bluetooth capture.
 
