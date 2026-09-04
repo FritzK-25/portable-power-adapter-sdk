@@ -1,0 +1,42 @@
+blueprint:
+  name: Portable power low state-of-charge alert
+  description: Notify when a portable power station remains below a threshold.
+  domain: automation
+  input:
+    soc_entity:
+      name: State-of-charge sensor
+      selector:
+        entity:
+          filter:
+            - domain: sensor
+              device_class: battery
+    threshold:
+      name: Alert below
+      default: 20
+      selector:
+        number:
+          min: 1
+          max: 99
+          unit_of_measurement: "%"
+          mode: box
+    notify_service:
+      name: Notification service
+      selector:
+        text:
+
+mode: single
+
+trigger:
+  - platform: numeric_state
+    entity_id: !input soc_entity
+    below: !input threshold
+    for:
+      minutes: 2
+
+action:
+  - service: !input notify_service
+    data:
+      title: Portable power battery low
+      message: >
+        {{ state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id }}
+        is at {{ states(trigger.entity_id) }}%.

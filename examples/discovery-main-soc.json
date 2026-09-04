@@ -1,0 +1,25 @@
+{
+  "name": "Main battery SOC",
+  "unique_id": "portable_power_example_a1b2c3d4e5f6_main_soc",
+  "object_id": "portable_power_main_soc",
+  "state_topic": "portable_power/example_a1b2c3d4e5f6/state",
+  "value_template": "{% if value_json.main_soc is defined and value_json.main_soc is not none %}{{ value_json.main_soc }}{% endif %}",
+  "unit_of_measurement": "%",
+  "device_class": "battery",
+  "state_class": "measurement",
+  "availability_mode": "all",
+  "availability": [
+    {"topic": "portable_power/example_a1b2c3d4e5f6/availability"},
+    {"topic": "portable_power/example_a1b2c3d4e5f6/telemetry"}
+  ],
+  "device": {
+    "identifiers": ["portable_power_example_a1b2c3d4e5f6"],
+    "name": "Portable Power Example",
+    "manufacturer": "Example vendor",
+    "model": "Example power station"
+  },
+  "origin": {
+    "name": "Portable Power Home Assistant Bridge Kit",
+    "sw_version": "0.1.0"
+  }
+}
