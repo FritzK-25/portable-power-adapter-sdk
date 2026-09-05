@@ -27,7 +27,11 @@ while preventing old power or charge readings from looking current.
 
 ## State payload
 
-Publish JSON to the retained state topic. Omit unavailable measurements or set
+Publish JSON without retention to the state topic. Configure `expire_after`
+(default 90 seconds) in discovery and publish more frequently than that interval.
+Configure a retained offline last will before connecting the client. On each
+connection, call `announce()` to invalidate prior telemetry and clear legacy
+retained state before publishing a fresh observation. Omit unavailable measurements or set
 them to `null`; discovery value templates should then emit an empty state.
 
 ```json

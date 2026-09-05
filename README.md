@@ -53,7 +53,16 @@ class MyAdapter:
         pass
 ```
 
-Use `HomeAssistantMQTTPublisher(adapter, mqtt_client)` in the adapter's launcher.
+Construct `HomeAssistantMQTTPublisher(adapter, mqtt_client, expire_after=90)`
+**before connecting** the MQTT client: construction configures a retained offline
+last will. Connect with a finite MQTT keepalive, start the client network loop,
+and call `announce()` after each connection, followed by `publish_current()`
+periodically at an interval shorter than `expire_after`. The client must implement
+Paho-compatible `will_set` and `publish` methods. Each client connection should
+serve one publisher. Call `shutdown()` and flush queued messages before a clean
+disconnect. Measurements are not retained, so Home Assistant waits for a fresh
+sample after restarting. Silent publishers expire after 90 seconds by default;
+old snapshots and adapter errors mark telemetry offline.
 Wrap that launcher in `publisher_lock(data_dir)` to reject a duplicate publisher.
 
 ## Try the fake adapter
@@ -74,7 +83,7 @@ pytest
    the adapter.
 2. Have an SDK-based adapter publish the retained discovery configuration in
    [`examples/discovery-main-soc.json`](examples/discovery-main-soc.json).
-3. Publish the state JSON in [`examples/state.json`](examples/state.json) to
+3. Publish the non-retained state JSON in [`examples/state.json`](examples/state.json) to
    `portable_power/<device_id>/state`.
 4. Publish retained `online`/`offline` values to both availability topics shown
    in the discovery example.
