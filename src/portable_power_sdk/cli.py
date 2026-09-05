@@ -9,6 +9,9 @@ from .mqtt import HomeAssistantMQTTPublisher
 
 
 class PrintClient:
+    def will_set(self, topic, payload, qos=0, retain=False):
+        pass
+
     def publish(self, topic, payload=None, qos=0, retain=False):
         print(json.dumps({"topic": topic, "payload": json.loads(payload) if payload and payload.startswith("{") else payload,
                           "qos": qos, "retain": retain}, indent=2))

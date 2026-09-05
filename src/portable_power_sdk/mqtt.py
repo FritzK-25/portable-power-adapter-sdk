@@ -14,6 +14,8 @@ from .model import Metric, TelemetryHealth, TelemetrySnapshot
 
 
 class MQTTClient(Protocol):
+    def will_set(self, topic: str, payload: str, qos: int = 0, retain: bool = False): ...
+
     def publish(self, topic: str, payload: str | None = None, qos: int = 0, retain: bool = False): ...
 
 
@@ -35,7 +37,12 @@ def publisher_lock(directory: Path):
 class HomeAssistantMQTTPublisher:
     """Publish an adapter as one Home Assistant MQTT Discovery device."""
 
-    def __init__(self, adapter: PowerAdapter, client: MQTTClient, *, topic_prefix: str = "portable_power"):
+    def __init__(self, adapter: PowerAdapter, client: MQTTClient, *, topic_prefix: str = "portable_power",
+                 expire_after: int = 90):
+        """Construct before connecting the MQTT client so its last will takes effect."""
+        if isinstance(expire_after, bool) or not isinstance(expire_after, int) or expire_after <= 0:
+            raise ValueError("expire_after must be a positive integer number of seconds.")
+        self.expire_after = expire_after
         self.adapter = adapter
         self.client = client
         self.topic_prefix = topic_prefix.rstrip("/")
@@ -43,6 +50,7 @@ class HomeAssistantMQTTPublisher:
         self._metrics = {metric.key: metric for metric in adapter.metrics}
         if len(self._metrics) != len(adapter.metrics):
             raise ValueError("Metric keys must be unique.")
+        self.client.will_set(self.availability_topic, "offline", qos=1, retain=True)
 
     @property
     def state_topic(self) -> str:
@@ -60,14 +68,17 @@ class HomeAssistantMQTTPublisher:
         return f"homeassistant/sensor/portable_power_{self.adapter.device.id}/{metric.key}/config"
 
     def discovery_payload(self, metric: Metric) -> dict:
+        key = json.dumps(metric.key)
+        value = f"value_json[{key}]"
         config = {
             "name": metric.name,
             "unique_id": f"portable_power_{self.adapter.device.id}_{metric.key}",
             "object_id": f"portable_power_{metric.key}",
             "state_topic": self.state_topic,
+            "expire_after": self.expire_after,
             "value_template": (
-                "{% if value_json." + metric.key + " is defined and value_json." + metric.key
-                + " is not none %}{{ value_json." + metric.key + " }}{% endif %}"
+                "{% if " + key + " in value_json and " + value
+                + " is not none %}{{ " + value + " }}{% endif %}"
             ),
             "availability_mode": "all",
             "availability": [
@@ -93,6 +104,9 @@ class HomeAssistantMQTTPublisher:
         return config
 
     def announce(self) -> None:
+        # Invalidate old sessions and remove state retained by earlier SDK versions.
+        self.client.publish(self.telemetry_topic, "offline", qos=1, retain=True)
+        self.client.publish(self.state_topic, "", qos=1, retain=True)
         for metric in self._metrics.values():
             self.client.publish(self.discovery_topic(metric), json.dumps(self.discovery_payload(metric)), qos=1, retain=True)
         self.client.publish(self.availability_topic, "online", qos=1, retain=True)
@@ -110,12 +124,25 @@ class HomeAssistantMQTTPublisher:
         return values
 
     def publish(self, snapshot: TelemetrySnapshot) -> None:
-        self.client.publish(self.state_topic, json.dumps(self.payload(snapshot), allow_nan=False), qos=0, retain=True)
+        age = (datetime.now(timezone.utc) - snapshot.observed_at).total_seconds()
+        if snapshot.health is TelemetryHealth.LIVE and not 0 <= age < self.expire_after:
+            snapshot = TelemetrySnapshot(snapshot.observed_at, TelemetryHealth.STALE)
+        try:
+            encoded = json.dumps(self.payload(snapshot), allow_nan=False)
+        except Exception:
+            self.client.publish(self.telemetry_topic, "offline", qos=1, retain=True)
+            raise
+        # Retained measurements replayed after an HA restart would reset expiry.
+        self.client.publish(self.state_topic, encoded, qos=1, retain=False)
         live = snapshot.health is TelemetryHealth.LIVE
         self.client.publish(self.telemetry_topic, "online" if live else "offline", qos=1, retain=True)
 
     def publish_current(self) -> TelemetrySnapshot:
-        snapshot = self.adapter.snapshot()
+        try:
+            snapshot = self.adapter.snapshot()
+        except Exception:
+            self.client.publish(self.telemetry_topic, "offline", qos=1, retain=True)
+            raise
         self.publish(snapshot)
         return snapshot
 
